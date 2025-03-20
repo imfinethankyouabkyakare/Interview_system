@@ -12,7 +12,7 @@ from pii_extract.base import PiiExtract
 agentops.init(api_key="46073116-9730-4d36-80b5-95aa630558aa")
 
 # Set up Google Gemini API
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY", "AIzaSyDq1wgsd_UjFTez-e8ptUDQlGBSAE-lmuM"))
+genai.configure(api_key=("GOOGLE_API_KEY", "AIzaSyDq1wgsd_UjFTez-e8ptUDQlGBSAE-lmuM"))
 
 # Define alternative PII detection function
 def detect_pii(text):
