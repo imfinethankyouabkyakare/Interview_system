@@ -139,7 +139,7 @@ if st.session_state.current_question_index < len(questions):
                 "model": model_options[selected_model]
             }
         ) as trace:
-        trace.log_event("submitted_answer", {"question": current_question, "answer_length": len(candidate_response)})
+            trace.log_event("submitted_answer", {"question": current_question, "answer_length": len(candidate_response)})
 
 
 
