@@ -8,10 +8,10 @@ from guardrails.validators import DetectPII, BlocklistMatch
 import yaml
 
 # Initialize AgentOps for monitoring
-agentops.init(api_key="your_agentops_api_key")
+agentops.init(api_key="470a571e-3f2a-4434-9cfc-cdc64247d696")
 
 # Set up Gemini API key
-genai.configure(api_key=os.getenv("GEMINI_API_KEY", "your_gemini_api_key"))
+genai.configure(api_key=("GEMINI_API_KEY", "AIzaSyDq1wgsd_UjFTez-e8ptUDQlGBSAE-lmuM"))
 
 # Define guard for interview responses
 guardrail_config = """
