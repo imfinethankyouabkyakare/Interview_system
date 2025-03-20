@@ -5,6 +5,7 @@ import google.generativeai as genai
 import agentops
 import re
 from guardrails import Guard
+from guardrails.validators import ValidChoices
 import yaml
 
 # Initialize AgentOps for monitoring
@@ -49,7 +50,7 @@ validators:
 with open("guardrail_config.yaml", "w") as f:
     f.write(guardrail_config)
 
-interview_guard = Guard.from_string(guardrail_config)
+interview_guard = Guard.from_yaml(guardrail_config)
 
 
 # Define interview questions for different roles
