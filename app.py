@@ -7,7 +7,7 @@ import re
 from pydantic import BaseModel, ValidationError
 
 # Initialize AgentOps for monitoring
-agentops.init(api_key="8d3d080d-d78e-460f-8d48-1194115ec670")
+agentops.init(api_key="0858c150-898a-4c1b-8786-348169ed8380")
 
 # Set up Google Gemini API
 genai.configure(api_key="AIzaSyDq1wgsd_UjFTez-e8ptUDQlGBSAE-lmuM")
