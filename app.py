@@ -90,13 +90,13 @@ def get_ai_response(question, job_role):
         else:
             trace.log_event("response_validation_failed", {"validation_status": "failed", "original_response": ai_response})
 
-        trace.end(status="completed")
+        trace.complete(status="completed")
 
         return validated_response
     except Exception as e:
         if 'trace' in locals():
             trace.log_event("error", {"error_message": str(e)})
-            trace.end(status="error")
+            trace.complete(status="error")
         return f"An error occurred: {str(e)}"
 
 # Streamlit UI
@@ -128,7 +128,7 @@ if st.session_state.current_question_index < len(questions):
     if st.button("Submit Answer"):
         if candidate_response:
             trace_id = f"candidate_response_{int(time.time())}"
-            with agentops.trace(
+            trace = agentops.start_trace(
                 name="interview_response",
                 metadata={
                     "user_id": candidate_name if candidate_name else "anonymous_candidate",
@@ -137,38 +137,24 @@ if st.session_state.current_question_index < len(questions):
                     "question_index": st.session_state.current_question_index,
                     "model": model_options[selected_model]
                 }
-            ) as trace:
-                trace.log_event("submitted_answer", {"question": current_question, "answer_length": len(candidate_response)})
+            )
 
-                with st.spinner("AI is analyzing your response..."):
-                    ai_feedback = get_ai_response(current_question, job_role)
+            trace.log_event("submitted_answer", {"question": current_question, "answer_length": len(candidate_response)})
 
-                st.session_state.interview_history.append({
-                    "question": current_question, 
-                    "candidate_response": candidate_response, 
-                    "ai_feedback": ai_feedback, 
-                    "model": selected_model
-                })
+            with st.spinner("AI is analyzing your response..."):
+                ai_feedback = get_ai_response(current_question, job_role)
 
-                st.session_state.current_question_index += 1
-                trace.end(status="completed")
-                st.experimental_rerun()
+            st.session_state.interview_history.append({
+                "question": current_question, 
+                "candidate_response": candidate_response, 
+                "ai_feedback": ai_feedback, 
+                "model": selected_model
+            })
+
+            st.session_state.current_question_index += 1
+            trace.complete(status="completed")
+            st.experimental_rerun()
         else:
             st.warning("Please provide an answer before submitting.")
 else:
     st.success("Interview completed! Here's a summary of your responses:")
-    for i, item in enumerate(st.session_state.interview_history):
-        st.markdown(f"### Question {i+1}")
-        st.markdown(f"**{item['question']}**")
-        st.markdown("Your answer:")
-        st.info(item['candidate_response'])
-        st.markdown(f"AI feedback (using {item['model']}):")
-        st.success(item['ai_feedback'])
-
-    if st.button("Start New Interview"):
-        st.session_state.current_question_index = 0
-        st.session_state.interview_history = []
-        st.experimental_rerun()
-
-st.sidebar.subheader("Interview Progress")
-st.sidebar.progress(min(st.session_state.current_question_index / len(questions), 1.0))
