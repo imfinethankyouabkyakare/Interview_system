@@ -5,48 +5,48 @@ import google.generativeai as genai
 import agentops
 import re
 from guardrails import Guard
-from guardrails.schema import Rail
+from guardrails.validators import ValidChoices
 
 # Initialize AgentOps for monitoring
-agentops.init(api_key="your-agentops-api-key")
+agentops.init(api_key="8d3d080d-d78e-460f-8d48-1194115ec670")
 
 # Set up Google Gemini API
-genai.configure(api_key="your-google-api-key")
+genai.configure(api_key="AIzaSyDq1wgsd_UjFTez-e8ptUDQlGBSAE-lmuM")
 
-# Define regex-based PII detection function
+# Define alternative regex-based PII detection function
 def detect_pii(text):
     pii_patterns = [
-        r'\b\d{3}-\d{2}-\d{4}\b',  # SSN format
-        r'\b(?:\d[ -]*?){13,16}\b',  # Credit card format
-        r'\b\d{10}\b',  # Phone number
-        r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'  # Email
+        r"\b\d{3}-\d{2}-\d{4}\b",  # SSN
+        r"\b\d{16}\b",  # Credit Card
+        r"\b\d{10}\b",  # Phone number
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"  # Email
     ]
     for pattern in pii_patterns:
         if re.search(pattern, text):
             return True
     return False
 
-# Define regex-based blocklist filter
+# Define manual blocklist filter
 def blocklist_filter(text):
     blocklist = ["offensive", "discriminatory", "inappropriate"]
-    return any(re.search(rf'\b{word}\b', text, re.IGNORECASE) for word in blocklist)
+    return any(word in text.lower() for word in blocklist)
 
-# Define guardrails using YAML format
+# Define guard for interview responses
 guardrail_config = """
-validators:
-  - name: response_type
-    type: choice
-    choices:
-      - professional
-      - technical
-      - clarification
+<rail version="0.1">
+    <output>
+        <string name="response" description="Ensures interview responses are appropriate and safe"/>
+    </output>
+    <validate>
+        <ValidChoices name="response" choices="professional, technical, clarification"/>
+    </validate>
+</rail>
 """
 
-# Create Guard instance
-rail = Rail(guardrail_config)
-interview_guard = Guard.from_rail(rail)
+# Create Guard from string
+interview_guard = Guard.from_rail_string(guardrail_config)
 
-# Define interview questions
+# Define interview questions for different roles
 interview_questions = {
     "Software Engineer": [
         "Explain the difference between inheritance and composition in object-oriented programming.",
@@ -57,6 +57,11 @@ interview_questions = {
         "Explain the difference between supervised and unsupervised learning.",
         "How would you handle missing data in a dataset?",
         "Describe a project where you applied machine learning to solve a real-world problem."
+    ],
+    "Product Manager": [
+        "How do you prioritize features in a product roadmap?",
+        "Describe how you would validate a new product idea.",
+        "How do you collaborate with engineering teams to ensure successful product delivery?"
     ]
 }
 
@@ -82,7 +87,8 @@ def get_ai_response(question, job_role):
         if detect_pii(ai_response) or blocklist_filter(ai_response):
             validated = False
         else:
-            validated_response, validated = interview_guard.validate(ai_response)
+            validated_response = interview_guard.parse(ai_response)["response"]
+            validated = True
 
         if validated:
             trace.log_event("response_validated", {"validation_status": "passed"})
@@ -94,66 +100,4 @@ def get_ai_response(question, job_role):
         return validated_response if validated else "The response did not meet our safety guidelines. Please rephrase or try another question."
     except Exception as e:
         if 'trace' in locals():
-            trace.log_event("error", {"error_message": str(e)})
-            trace.end(status="error")
-        return f"An error occurred: {str(e)}"
-
-# Streamlit UI
-st.title("AI Interview Platform")
-st.subheader("Practice interviews with AI feedback and safety guardrails")
-
-st.sidebar.header("Interview Settings")
-job_role = st.sidebar.selectbox("Select Job Role", list(interview_questions.keys()))
-candidate_name = st.sidebar.text_input("Your Name (Optional)")
-
-if 'current_question_index' not in st.session_state:
-    st.session_state.current_question_index = 0
-if 'interview_history' not in st.session_state:
-    st.session_state.interview_history = []
-
-questions = interview_questions[job_role]
-if st.session_state.current_question_index < len(questions):
-    current_question = questions[st.session_state.current_question_index]
-
-    st.markdown(f"### Question {st.session_state.current_question_index + 1}/{len(questions)}")
-    st.markdown(f"**{current_question}**")
-
-    candidate_response = st.text_area("Your Answer", height=150)
-
-    if st.button("Submit Answer"):
-        if candidate_response:
-            trace_id = f"candidate_response_{int(time.time())}"
-            trace = agentops.Trace(
-                user_id=candidate_name if candidate_name else "anonymous_candidate",
-                trace_id=trace_id,
-                metadata={"job_role": job_role, "question_index": st.session_state.current_question_index}
-            )
-            trace.log_event("submitted_answer", {"question": current_question, "answer_length": len(candidate_response)})
-
-            with st.spinner("AI is analyzing your response..."):
-                ai_feedback = get_ai_response(current_question, job_role)
-
-            st.session_state.interview_history.append({"question": current_question, "candidate_response": candidate_response, "ai_feedback": ai_feedback})
-
-            st.session_state.current_question_index += 1
-            trace.end(status="completed")
-            st.experimental_rerun()
-        else:
-            st.warning("Please provide an answer before submitting.")
-else:
-    st.success("Interview completed! Here's a summary of your responses:")
-    for i, item in enumerate(st.session_state.interview_history):
-        st.markdown(f"### Question {i+1}")
-        st.markdown(f"**{item['question']}**")
-        st.markdown("Your answer:")
-        st.info(item['candidate_response'])
-        st.markdown("AI feedback:")
-        st.success(item['ai_feedback'])
-
-    if st.button("Start New Interview"):
-        st.session_state.current_question_index = 0
-        st.session_state.interview_history = []
-        st.experimental_rerun()
-
-st.sidebar.subheader("Interview Progress")
-progress = st.sidebar.progress(min(st.session_state.current_question_index / len(questions), 1.0))
+            trace
