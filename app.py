@@ -64,39 +64,35 @@ interview_questions = {
 def get_ai_response(question, job_role):
     """Get AI response with validation and monitoring"""
     try:
-        trace = agentops.start_trace(
+        # Create a span for monitoring instead of using start_trace
+        with agentops.span(
             name="interview_response",
             metadata={"user_id": "candidate_123", "trace_id": f"interview_{int(time.time())}", "job_role": job_role, "question": question}
-        )
+        ) as span:
+            response = genai.generate(
+                model="gemini-pro",
+                prompt=f"You are an AI interviewer for a {job_role} position. Provide a response to the candidate's answer. Be professional and constructive.\n\nQuestion: {question}\n\nCandidate's Answer: [Candidate response would go here]",
+                temperature=0.7,
+                max_output_tokens=500
+            )
 
-        response = genai.generate(
-            model="gemini-pro",
-            prompt=f"You are an AI interviewer for a {job_role} position. Provide a response to the candidate's answer. Be professional and constructive.\n\nQuestion: {question}\n\nCandidate's Answer: [Candidate response would go here]",
-            temperature=0.7,
-            max_output_tokens=500
-        )
+            ai_response = response.text
 
-        ai_response = response.text
+            # Apply validation and PII detection
+            if detect_pii(ai_response) or blocklist_filter(ai_response):
+                validated = False
+                validated_response = "The response did not meet our safety guidelines. Please rephrase or try another question."
+            else:
+                validated_response, validated = AIResponse.validate_response(ai_response)
 
-        # Apply validation and PII detection
-        if detect_pii(ai_response) or blocklist_filter(ai_response):
-            validated = False
-            validated_response = "The response did not meet our safety guidelines. Please rephrase or try another question."
-        else:
-            validated_response, validated = AIResponse.validate_response(ai_response)
-
-        if validated:
-            trace.log_event("response_validated", {"validation_status": "passed"})
-        else:
-            trace.log_event("response_validation_failed", {"validation_status": "failed", "original_response": ai_response})
-
-        trace.complete(status="completed")
+            if validated:
+                span.log_event("response_validated", {"validation_status": "passed"})
+            else:
+                span.log_event("response_validation_failed", {"validation_status": "failed", "original_response": ai_response})
 
         return validated_response
     except Exception as e:
-        if 'trace' in locals():
-            trace.log_event("error", {"error_message": str(e)})
-            trace.complete(status="error")
+        agentops.log_event("error", {"error_message": str(e)})
         return f"An error occurred: {str(e)}"
 
 # Streamlit UI
@@ -128,7 +124,9 @@ if st.session_state.current_question_index < len(questions):
     if st.button("Submit Answer"):
         if candidate_response:
             trace_id = f"candidate_response_{int(time.time())}"
-            trace = agentops.start_trace(
+            
+            # Use span context manager instead of start_trace/complete
+            with agentops.span(
                 name="interview_response",
                 metadata={
                     "user_id": candidate_name if candidate_name else "anonymous_candidate",
@@ -137,24 +135,32 @@ if st.session_state.current_question_index < len(questions):
                     "question_index": st.session_state.current_question_index,
                     "model": model_options[selected_model]
                 }
-            )
+            ) as span:
+                span.log_event("submitted_answer", {"question": current_question, "answer_length": len(candidate_response)})
 
-            trace.log_event("submitted_answer", {"question": current_question, "answer_length": len(candidate_response)})
+                with st.spinner("AI is analyzing your response..."):
+                    ai_feedback = get_ai_response(current_question, job_role)
 
-            with st.spinner("AI is analyzing your response..."):
-                ai_feedback = get_ai_response(current_question, job_role)
+                st.session_state.interview_history.append({
+                    "question": current_question, 
+                    "candidate_response": candidate_response, 
+                    "ai_feedback": ai_feedback, 
+                    "model": selected_model
+                })
 
-            st.session_state.interview_history.append({
-                "question": current_question, 
-                "candidate_response": candidate_response, 
-                "ai_feedback": ai_feedback, 
-                "model": selected_model
-            })
-
-            st.session_state.current_question_index += 1
-            trace.complete(status="completed")
+                st.session_state.current_question_index += 1
+            
             st.experimental_rerun()
         else:
             st.warning("Please provide an answer before submitting.")
 else:
     st.success("Interview completed! Here's a summary of your responses:")
+
+    # Display interview history
+    for i, entry in enumerate(st.session_state.interview_history):
+        st.markdown(f"### Question {i+1}: {entry['question']}")
+        st.markdown("**Your Answer:**")
+        st.markdown(entry['candidate_response'])
+        st.markdown("**AI Feedback:**")
+        st.markdown(entry['ai_feedback'])
+        st.markdown("---")
