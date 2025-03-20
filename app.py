@@ -12,6 +12,7 @@ agentops.init(
     api_key=AGENTOPS_API_KEY,
     default_tags=['gemini']
 )
+agentops.start_session()
 
 # Set up Google Gemini API
 genai.configure(api_key="AIzaSyDq1wgsd_UjFTez-e8ptUDQlGBSAE-lmuM")
