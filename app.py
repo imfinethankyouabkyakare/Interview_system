@@ -6,7 +6,6 @@ import agentops
 import re
 from guardrails import Guard
 import yaml
-from pii_extract.base import PiiExtract
 
 # Initialize AgentOps for monitoring
 agentops.init(api_key="46073116-9730-4d36-80b5-95aa630558aa")
@@ -14,11 +13,18 @@ agentops.init(api_key="46073116-9730-4d36-80b5-95aa630558aa")
 # Set up Google Gemini API
 genai.configure(api_key=("GOOGLE_API_KEY", "AIzaSyDq1wgsd_UjFTez-e8ptUDQlGBSAE-lmuM"))
 
-# Define alternative PII detection function
+# Define regex-based PII detection function
 def detect_pii(text):
-    pii_extractor = PiiExtract()
-    detected_pii = pii_extractor(text)
-    return bool(detected_pii)
+    patterns = {
+        "Email": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+        "Phone Number": r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b",
+        "Credit Card": r"\b(?:\d[ -]*?){13,16}\b"
+    }
+    
+    for pii_type, pattern in patterns.items():
+        if re.search(pattern, text):
+            return True  # PII detected
+    return False  # No PII detected
 
 # Define manual blocklist filter
 def blocklist_filter(text):
