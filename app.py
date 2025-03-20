@@ -49,7 +49,7 @@ validators:
 with open("guardrail_config.yaml", "w") as f:
     f.write(guardrail_config)
 
-interview_guard = Guard.from_yaml("guardrail_config.yaml")
+interview_guard = Guard.from_yaml_file("guardrail_config.yaml")
 
 # Define interview questions for different roles
 interview_questions = {
