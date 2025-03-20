@@ -5,7 +5,6 @@ import google.generativeai as genai
 import agentops
 import re
 from guardrails import Guard
-from guardrails.validators import BlocklistMatch
 import yaml
 from pii_extract.base import PiiExtract
 
@@ -21,18 +20,16 @@ def detect_pii(text):
     detected_pii = pii_extractor(text)
     return bool(detected_pii)
 
+# Define manual blocklist filter
+def blocklist_filter(text):
+    blocklist = ["offensive", "discriminatory", "inappropriate"]
+    return any(word in text.lower() for word in blocklist)
+
 # Define guard for interview responses
 guardrail_config = """
 id: interview_response_validator
 description: Ensures interview responses are appropriate and safe
 validators:
-  - id: appropriate_content
-    type: blocklist_match
-    config:
-      blocklist:
-        - offensive
-        - discriminatory
-        - inappropriate
   - id: valid_response_type
     type: valid_choices
     config:
@@ -86,7 +83,7 @@ def get_ai_response(question, job_role):
         ai_response = response.text
 
         # Apply guardrails and PII detection
-        if detect_pii(ai_response):
+        if detect_pii(ai_response) or blocklist_filter(ai_response):
             validated = False
         else:
             validated_response, validated = interview_guard.validate(ai_response)
