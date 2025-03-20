@@ -3,30 +3,29 @@ import os
 import time
 import google.generativeai as genai
 import agentops
+import re
 from guardrails import Guard
-from guardrails.validators import DetectPII, BlocklistMatch
+from guardrails.validators import BlocklistMatch
 import yaml
+from pii_extract.base import PiiExtract
 
 # Initialize AgentOps for monitoring
-agentops.init(api_key="470a571e-3f2a-4434-9cfc-cdc64247d696")
+agentops.init(api_key="46073116-9730-4d36-80b5-95aa630558aa")
 
-# Set up Gemini API key
-genai.configure(api_key=("GEMINI_API_KEY", "AIzaSyDq1wgsd_UjFTez-e8ptUDQlGBSAE-lmuM"))
+# Set up Google Gemini API
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY", "AIzaSyDq1wgsd_UjFTez-e8ptUDQlGBSAE-lmuM"))
+
+# Define alternative PII detection function
+def detect_pii(text):
+    pii_extractor = PiiExtract()
+    detected_pii = pii_extractor(text)
+    return bool(detected_pii)
 
 # Define guard for interview responses
 guardrail_config = """
 id: interview_response_validator
 description: Ensures interview responses are appropriate and safe
 validators:
-  - id: no_pii
-    type: detect_pii
-    config:
-      pii_types:
-        - PERSON
-        - EMAIL_ADDRESS
-        - PHONE_NUMBER
-        - US_SSN
-        - CREDIT_CARD
   - id: appropriate_content
     type: blocklist_match
     config:
@@ -34,6 +33,13 @@ validators:
         - offensive
         - discriminatory
         - inappropriate
+  - id: valid_response_type
+    type: valid_choices
+    config:
+      choices:
+        - professional
+        - technical
+        - clarification
 """
 
 # Create guard from YAML
@@ -62,7 +68,7 @@ interview_questions = {
 }
 
 def get_ai_response(question, job_role):
-    """Get AI response with guardrails and monitoring using Gemini API"""
+    """Get AI response with guardrails and monitoring"""
     try:
         trace = agentops.Trace(
             user_id="candidate_123",
@@ -70,26 +76,29 @@ def get_ai_response(question, job_role):
             metadata={"job_role": job_role, "question": question}
         )
 
-        # Get AI response using Gemini API
-        model = genai.GenerativeModel("gemini-pro")
-        response = model.generate_content(f"You are an AI interviewer for a {job_role} position. "
-                                          f"Provide a response to the candidate's answer. Be professional and constructive."
-                                          f"\n\nThe question was: {question}\n\nMy answer is: [Candidate response would go here]")
+        response = genai.generate(
+            model="gemini-pro",
+            prompt=f"You are an AI interviewer for a {job_role} position. Provide a response to the candidate's answer. Be professional and constructive.\n\nQuestion: {question}\n\nCandidate's Answer: [Candidate response would go here]",
+            temperature=0.7,
+            max_output_tokens=500
+        )
 
         ai_response = response.text
 
-        # Apply guardrails
-        validated_response, validated = interview_guard.validate(ai_response)
+        # Apply guardrails and PII detection
+        if detect_pii(ai_response):
+            validated = False
+        else:
+            validated_response, validated = interview_guard.validate(ai_response)
 
-        # Log outcome to AgentOps
         if validated:
             trace.log_event("response_validated", {"validation_status": "passed"})
         else:
             trace.log_event("response_validation_failed", {"validation_status": "failed", "original_response": ai_response})
 
         trace.end(status="completed")
-        return validated_response if validated else "The response did not meet our safety guidelines. Please rephrase or try another question."
 
+        return validated_response if validated else "The response did not meet our safety guidelines. Please rephrase or try another question."
     except Exception as e:
         if 'trace' in locals():
             trace.log_event("error", {"error_message": str(e)})
@@ -100,21 +109,23 @@ def get_ai_response(question, job_role):
 st.title("AI Interview Platform")
 st.subheader("Practice interviews with AI feedback and safety guardrails")
 
-# Sidebar for configuration
 st.sidebar.header("Interview Settings")
 job_role = st.sidebar.selectbox("Select Job Role", list(interview_questions.keys()))
 candidate_name = st.sidebar.text_input("Your Name (Optional)")
 
-# Initialize session state
+# Model selection
+model_options = {"Gemini Pro": "gemini-pro"}
+selected_model = st.sidebar.selectbox("Select Model", list(model_options.keys()))
+
 if 'current_question_index' not in st.session_state:
     st.session_state.current_question_index = 0
 if 'interview_history' not in st.session_state:
     st.session_state.interview_history = []
 
-# Display current question
 questions = interview_questions[job_role]
 if st.session_state.current_question_index < len(questions):
     current_question = questions[st.session_state.current_question_index]
+
     st.markdown(f"### Question {st.session_state.current_question_index + 1}/{len(questions)}")
     st.markdown(f"**{current_question}**")
 
@@ -126,18 +137,14 @@ if st.session_state.current_question_index < len(questions):
             trace = agentops.Trace(
                 user_id=candidate_name if candidate_name else "anonymous_candidate",
                 trace_id=trace_id,
-                metadata={"job_role": job_role, "question_index": st.session_state.current_question_index}
+                metadata={"job_role": job_role, "question_index": st.session_state.current_question_index, "model": model_options[selected_model]}
             )
             trace.log_event("submitted_answer", {"question": current_question, "answer_length": len(candidate_response)})
 
             with st.spinner("AI is analyzing your response..."):
                 ai_feedback = get_ai_response(current_question, job_role)
 
-            st.session_state.interview_history.append({
-                "question": current_question,
-                "candidate_response": candidate_response,
-                "ai_feedback": ai_feedback
-            })
+            st.session_state.interview_history.append({"question": current_question, "candidate_response": candidate_response, "ai_feedback": ai_feedback, "model": selected_model})
 
             st.session_state.current_question_index += 1
             trace.end(status="completed")
@@ -151,9 +158,9 @@ else:
         st.markdown(f"**{item['question']}**")
         st.markdown("Your answer:")
         st.info(item['candidate_response'])
-        st.markdown("AI feedback:")
+        st.markdown(f"AI feedback (using {item['model']}):")
         st.success(item['ai_feedback'])
-    
+
     if st.button("Start New Interview"):
         st.session_state.current_question_index = 0
         st.session_state.interview_history = []
@@ -161,13 +168,3 @@ else:
 
 st.sidebar.subheader("Interview Progress")
 progress = st.sidebar.progress(min(st.session_state.current_question_index / len(questions), 1.0))
-
-st.sidebar.subheader("Platform Features")
-st.sidebar.markdown("""
-- 🚀 **Google Gemini** provides AI-powered interview feedback
-- 🛡️ **Guardrails.ai** ensures safe and appropriate responses
-- 📊 **AgentOps.ai** monitors performance and user experience
-- 🔒 **PII Protection** prevents collection of sensitive information
-""")
-
-st.sidebar.info("This platform uses AgentOps.ai for monitoring. No personal identifiable information is collected.")
