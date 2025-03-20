@@ -129,12 +129,15 @@ if st.session_state.current_question_index < len(questions):
     if st.button("Submit Answer"):
         if candidate_response:
             trace_id = f"candidate_response_{int(time.time())}"
-            trace = agentops.Trace(
-                user_id=candidate_name if candidate_name else "anonymous_candidate",
-                trace_id=trace_id,
-                metadata={"job_role": job_role, "question_index": st.session_state.current_question_index, "model": model_options[selected_model]}
-            )
-            trace.log_event("submitted_answer", {"question": current_question, "answer_length": len(candidate_response)})
+            with agentops.trace(
+                    name="interview_response",
+                    metadata={"user_id": candidate_name if candidate_name else "anonymous_candidate",
+                              "trace_id": trace_id,
+                              "job_role": job_role,
+                              "question_index": st.session_state.current_question_index,
+                              "model": model_options[selected_model]}
+                ) as trace:
+                    trace.log_event("submitted_answer", {"question": current_question, "answer_length": len(candidate_response)})
 
             with st.spinner("AI is analyzing your response..."):
                 ai_feedback = get_ai_response(current_question, job_role)
