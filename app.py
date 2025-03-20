@@ -128,7 +128,7 @@ if st.session_state.current_question_index < len(questions):
     if st.button("Submit Answer"):
         if candidate_response:
             trace_id = f"candidate_response_{int(time.time())}"
-            with agentops.trace(
+            with agentops.Trace(
                 name="interview_response",
                 metadata={
                     "user_id": candidate_name if candidate_name else "anonymous_candidate",
