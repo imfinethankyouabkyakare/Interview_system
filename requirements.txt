@@ -3,4 +3,4 @@ google-generativeai
 agentops
 guardrails-ai
 pyyaml
-pii-extract-base
+pii-extract
